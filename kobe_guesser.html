@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Kobe Guessr 完全版</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family:sans-serif; }
+#image { height:40vh; background:#000; display:flex; align-items:center; justify-content:center; }
+#image img { width:100%; height:100%; object-fit:cover; }
+#map { height:60vh; }
+#info {
+  position:fixed;
+  top:10px;
+  left:10px;
+  background:white;
+  padding:10px;
+  border-radius:10px;
+  z-index:1000;
+}
+button { margin-top:5px; }
+</style>
+</head>
+
+<body>
+
+<div id="image"><img id="photo"></div>
+<div id="map"></div>
+
+<div id="info">
+  <div id="text">読み込み中...</div>
+  <button onclick="nextRound()">次へ</button>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+let map = L.map('map').setView([34.69, 135.18], 12);
+let answer = null;
+let markers = [];
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+
+// 神戸市街地ゾーン（海・山除外）
+const zones = [
+  { minLat:34.65, maxLat:34.70, minLng:135.10, maxLng:135.20 },
+  { minLat:34.66, maxLat:34.71, minLng:135.15, maxLng:135.25 }
+];
+
+function getRandomLocation() {
+  const zone = zones[Math.floor(Math.random() * zones.length)];
+  return {
+    lat: zone.minLat + Math.random() * (zone.maxLat - zone.minLat),
+    lng: zone.minLng + Math.random() * (zone.maxLng - zone.minLng)
+  };
+}
+
+// 距離計算
+function getDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLng = (lng2-lng1) * Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLng/2)**2;
+
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// Wikimediaから画像取得
+async function getImage(lat, lng) {
+  try {
+    const url = `https://commons.wikimedia.org/w/api.php?action=query&generator=geosearch&ggscoord=${lat}|${lng}&ggsradius=2000&ggslimit=1&prop=imageinfo&iiprop=url&format=json&origin=*`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    if (!data.query) return null;
+
+    const page = Object.values(data.query.pages)[0];
+    return page.imageinfo[0].url;
+
+  } catch {
+    return null;
+  }
+}
+
+// 新ラウンド
+async function nextRound() {
+  // マーカー削除
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  document.getElementById("text").innerText = "読み込み中...";
+
+  // 有効な画像が出るまで繰り返し
+  let img = null;
+  while (!img) {
+    answer = getRandomLocation();
+    img = await getImage(answer.lat, answer.lng);
+  }
+
+  document.getElementById("photo").src = img;
+  document.getElementById("text").innerText = "地図をクリックして当てて！";
+}
+
+// クリック処理
+map.on('click', function(e) {
+  if (!answer) return;
+
+  const dist = getDistance(e.latlng.lat, e.latlng.lng, answer.lat, answer.lng);
+  const score = Math.max(0, Math.round(5000 - dist * 1000));
+
+  const m1 = L.marker([e.latlng.lat, e.latlng.lng]).addTo(map).bindPopup("あなた").openPopup();
+  const m2 = L.marker([answer.lat, answer.lng]).addTo(map).bindPopup("正解");
+
+  markers.push(m1, m2);
+
+  document.getElementById("text").innerText =
+    `距離: ${dist.toFixed(2)} km / スコア: ${score}`;
+});
+
+// 初回
+nextRound();
+</script>
+
+</body>
+</html>
